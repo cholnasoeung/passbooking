@@ -1,90 +1,85 @@
-import { useEffect, useState } from "react";
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import Login from './pages/Login';
+import UserDashboard from './pages/UserDashboard';
+import DriverDashboard from './pages/DriverDashboard';
 
-type User = {
-  id: number;
-  name: string;
+const PrivateRoute = ({
+  children,
+  allowedRole
+}: {
+  children: React.ReactNode;
+  allowedRole: 'user' | 'driver';
+}) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-white">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-grab-green border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-gray-500 text-sm">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== allowedRole) {
+    return <Navigate to={user.role === 'driver' ? '/driver' : '/user'} replace />;
+  }
+  return <>{children}</>;
 };
 
-function App() {
-  const [name, setName] = useState<string>("");
-  const [users, setUsers] = useState<User[]>([]);
-  const [editId, setEditId] = useState<number | null>(null);
-
-  const API = "http://localhost:5000/users";
-
-  // READ
-  const fetchUsers = async () => {
-    const res = await fetch(API);
-    const data: User[] = await res.json();
-    setUsers(data);
-  };
-
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  // CREATE & UPDATE
-  const handleSubmit = async () => {
-    if (!name.trim()) return;
-
-    if (editId !== null) {
-      await fetch(`${API}/${editId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      setEditId(null);
-    } else {
-      await fetch(API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-    }
-
-    setName("");
-    fetchUsers();
-  };
-
-  // DELETE
-  const handleDelete = async (id: number) => {
-    await fetch(`${API}/${id}`, {
-      method: "DELETE",
-    });
-    fetchUsers();
-  };
-
-  // EDIT
-  const handleEdit = (user: User) => {
-    setName(user.name);
-    setEditId(user.id);
-  };
+const AppRoutes = () => {
+  const { user, loading } = useAuth();
+  if (loading) return null;
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>CRUD App 🚀 (TypeScript)</h1>
-
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Enter name"
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          user
+            ? <Navigate to={user.role === 'driver' ? '/driver' : '/user'} replace />
+            : <Login />
+        }
       />
-
-      <button onClick={handleSubmit}>
-        {editId !== null ? "Update" : "Add"}
-      </button>
-
-      <ul>
-        {users.map((u) => (
-          <li key={u.id}>
-            {u.name}
-            <button onClick={() => handleEdit(u)}>Edit</button>
-            <button onClick={() => handleDelete(u.id)}>Delete</button>
-          </li>
-        ))}
-      </ul>
-    </div>
+      <Route
+        path="/user"
+        element={
+          <PrivateRoute allowedRole="user">
+            <UserDashboard />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/driver"
+        element={
+          <PrivateRoute allowedRole="driver">
+            <DriverDashboard />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="*"
+        element={
+          user
+            ? <Navigate to={user.role === 'driver' ? '/driver' : '/user'} replace />
+            : <Navigate to="/login" replace />
+        }
+      />
+    </Routes>
   );
-}
+};
+
+const App = () => (
+  <AuthProvider>
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
+  </AuthProvider>
+);
 
 export default App;
