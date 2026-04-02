@@ -1,8 +1,13 @@
 const mongoose = require('mongoose');
 
+// Fix TLS/SSL issues on Windows with MongoDB Atlas
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI);
+    await mongoose.connect(process.env.MONGO_URI, {
+      serverSelectionTimeoutMS: 10000,
+    });
     console.log('MongoDB connected successfully');
   } catch (err) {
     console.error('MongoDB connection error:', err.message);
