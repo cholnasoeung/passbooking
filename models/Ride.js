@@ -11,6 +11,12 @@ const rideSchema = new mongoose.Schema({
     lat: { type: Number, required: true },
     lng: { type: Number, required: true }
   },
+  routePath: [
+    {
+      lat: { type: Number },
+      lng: { type: Number }
+    }
+  ],
   distance: { type: Number, default: 0 },      // in km
   duration: { type: String, default: '' },
   price: { type: Number, default: 0 },          // distance * 0.5

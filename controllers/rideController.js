@@ -34,7 +34,8 @@ exports.createRide = async (req, res) => {
       distance,
       duration,
       vehicleType,
-      seats = 1
+      seats = 1,
+      routePath: rawRoutePath
     } = req.body;
 
     if (!vehicleType) {
@@ -59,6 +60,22 @@ exports.createRide = async (req, res) => {
       (vehicle.basePrice + (distance * vehicle.pricePerKm * requestedSeats)).toFixed(2)
     );
 
+    const normalizedRoutePath = Array.isArray(rawRoutePath)
+      ? rawRoutePath
+        .map((point) => ({
+          lat: Number(point?.lat),
+          lng: Number(point?.lng)
+        }))
+        .filter((point) => !Number.isNaN(point.lat) && !Number.isNaN(point.lng))
+      : [];
+
+    const finalRoutePath = normalizedRoutePath.length > 0
+      ? normalizedRoutePath
+      : [
+        { lat: pickup.lat, lng: pickup.lng },
+        { lat: destination.lat, lng: destination.lng }
+      ];
+
     const ride = new Ride({
       userId: req.user.id,
       pickup,
@@ -68,7 +85,8 @@ exports.createRide = async (req, res) => {
       price,
       seats: requestedSeats,
       vehicleType,
-      status: 'pending'
+      status: 'pending',
+      routePath: finalRoutePath
     });
 
     const onlineDrivers = await Driver.find({
