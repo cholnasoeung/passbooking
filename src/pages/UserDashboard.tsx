@@ -1,11 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useJsApiLoader, Autocomplete } from '@react-google-maps/api';
+import React, { useState, useEffect, useRef } from 'react';
 import Map from '../components/Map';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-
-const LIBRARIES: ('places')[] = ['places'];
 
 interface LatLng { lat: number; lng: number }
 
@@ -13,6 +10,13 @@ interface RouteInfo {
   distanceKm: number;
   distanceText: string;
   duration: string;
+}
+
+interface NominatimResult {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
 }
 
 interface Ride {
@@ -28,110 +32,134 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   pending:   { label: 'Searching for driver...', color: 'text-yellow-600' },
   accepted:  { label: 'Driver accepted! On the way', color: 'text-blue-600' },
   ongoing:   { label: 'Ride in progress', color: 'text-grab-green' },
-  completed: { label: 'Ride completed!', color: 'text-gray-600' }
+  completed: { label: 'Ride completed!', color: 'text-gray-600' },
 };
 
 const UserDashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    libraries: LIBRARIES
-  });
-
   const [pickup, setPickup] = useState<LatLng | null>(null);
   const [destination, setDestination] = useState<LatLng | null>(null);
   const [destinationName, setDestinationName] = useState('');
+  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
+  const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [ride, setRide] = useState<Ride | null>(null);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState('');
 
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Get user's current GPS location
+  // Get browser GPS location
   useEffect(() => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setPickup({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-      },
-      () => {
-        // Default to Phnom Penh if geolocation denied
-        setPickup({ lat: 11.5564, lng: 104.9282 });
-      }
+    navigator.geolocation?.getCurrentPosition(
+      (pos) => setPickup({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => setPickup({ lat: 11.5564, lng: 104.9282 }) // fallback Phnom Penh
     );
   }, []);
 
-  // Poll ride status when a ride is active
+  // Poll ride status while active
   useEffect(() => {
     if (!ride || ride.status === 'completed') {
       if (pollRef.current) clearInterval(pollRef.current);
       return;
     }
-
     pollRef.current = setInterval(async () => {
       try {
         const res = await api.get(`/rides/${ride._id}`);
         setRide(res.data);
-        if (res.data.status === 'completed') {
-          if (pollRef.current) clearInterval(pollRef.current);
-        }
-      } catch {
-        // silent
-      }
+      } catch { /* silent */ }
     }, 3000);
-
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [ride?._id, ride?.status]);
 
-  const onPlaceChanged = useCallback(() => {
-    if (autocompleteRef.current) {
-      const place = autocompleteRef.current.getPlace();
-      if (place.geometry?.location) {
-        setDestination({
-          lat: place.geometry.location.lat(),
-          lng: place.geometry.location.lng()
-        });
-        setDestinationName(place.formatted_address || place.name || '');
-        setRouteInfo(null);
-      }
-    }
-  }, []);
+  // Nominatim search (OpenStreetMap geocoding — free, no key)
+  const handleSearchInput = (value: string) => {
+    setDestinationName(value);
+    setDestination(null);
+    setRouteInfo(null);
+    setRouteCoords([]);
+
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    if (value.length < 3) { setSuggestions([]); return; }
+
+    searchDebounce.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&format=json&limit=5`,
+          { headers: { 'Accept-Language': 'en' } }
+        );
+        setSuggestions(await res.json());
+      } catch { /* silent */ }
+    }, 500);
+  };
+
+  // OSRM routing (free, no key)
+  const fetchRoute = async (from: LatLng, to: LatLng) => {
+    try {
+      const res = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`
+      );
+      const data = await res.json();
+      if (data.code !== 'Ok') return;
+
+      const route = data.routes[0];
+      const coords: [number, number][] = route.geometry.coordinates.map(
+        ([lng, lat]: [number, number]) => [lat, lng]
+      );
+      const distanceKm = route.distance / 1000;
+      const minutes = Math.round(route.duration / 60);
+
+      setRouteCoords(coords);
+      setRouteInfo({
+        distanceKm,
+        distanceText: `${distanceKm.toFixed(1)} km`,
+        duration: minutes >= 60
+          ? `${Math.floor(minutes / 60)}h ${minutes % 60}min`
+          : `${minutes} min`,
+      });
+    } catch { /* silent */ }
+  };
+
+  const handleSelectSuggestion = (result: NominatimResult) => {
+    const dest = { lat: parseFloat(result.lat), lng: parseFloat(result.lon) };
+    setDestination(dest);
+    setDestinationName(result.display_name.split(',').slice(0, 2).join(','));
+    setSuggestions([]);
+    if (pickup) fetchRoute(pickup, dest);
+  };
 
   const handleBookRide = async () => {
     if (!pickup || !destination || !routeInfo) return;
     setBooking(true);
     setError('');
-
     try {
       const res = await api.post('/rides', {
         pickup,
         destination,
         distance: routeInfo.distanceKm,
-        duration: routeInfo.duration
+        duration: routeInfo.duration,
       });
       setRide(res.data);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })
-        ?.response?.data?.message || 'Failed to book ride';
-      setError(msg);
+      setError(
+        (err as { response?: { data?: { message?: string } } })
+          ?.response?.data?.message || 'Failed to book ride'
+      );
     } finally {
       setBooking(false);
     }
   };
 
-  const handleCancelRide = () => {
+  const handleReset = () => {
     if (pollRef.current) clearInterval(pollRef.current);
     setRide(null);
     setDestination(null);
     setDestinationName('');
     setRouteInfo(null);
+    setRouteCoords([]);
   };
 
   const price = routeInfo ? (routeInfo.distanceKm * 0.5).toFixed(2) : null;
@@ -140,24 +168,19 @@ const UserDashboard: React.FC = () => {
     <div className="relative w-full h-screen">
       {/* Full-screen map */}
       <div className="absolute inset-0">
-        {isLoaded ? (
-          <Map
-            pickup={pickup}
-            destination={destination}
-            driverLocation={ride?.driverId?.currentLocation ?? null}
-            onRouteResult={setRouteInfo}
-          />
-        ) : (
-          <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-            <div className="text-gray-500">Loading map...</div>
-          </div>
-        )}
+        <Map
+          pickup={pickup}
+          destination={destination}
+          routeCoords={routeCoords}
+          driverLocation={ride?.driverId?.currentLocation ?? null}
+        />
       </div>
 
       {/* Top bar */}
-      <div className="absolute top-0 left-0 right-0 z-10 p-4">
-        <div className="max-w-md mx-auto">
-          <div className="card-grab flex items-center justify-between mb-3">
+      <div className="absolute top-0 left-0 right-0 z-[1000] p-4">
+        <div className="max-w-md mx-auto space-y-2">
+          {/* Header card */}
+          <div className="card-grab flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xl">🛺</span>
               <div>
@@ -174,37 +197,53 @@ const UserDashboard: React.FC = () => {
           </div>
 
           {/* Search bar */}
-          {isLoaded && !ride && (
-            <div className="card-grab">
+          {!ride && (
+            <div className="card-grab relative">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-3 h-3 rounded-full bg-grab-green flex-shrink-0" />
-                <p className="text-xs text-gray-500">Your location</p>
+                <p className="text-xs text-gray-500">Your current location</p>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-red-500 flex-shrink-0" />
-                <Autocomplete
-                  onLoad={(ac) => { autocompleteRef.current = ac; }}
-                  onPlaceChanged={onPlaceChanged}
-                >
-                  <input
-                    type="text"
-                    placeholder="Where are you going?"
-                    className="input-grab text-sm"
-                    value={destinationName}
-                    onChange={(e) => setDestinationName(e.target.value)}
-                  />
-                </Autocomplete>
+                <input
+                  type="text"
+                  placeholder="Where are you going?"
+                  value={destinationName}
+                  onChange={(e) => handleSearchInput(e.target.value)}
+                  className="input-grab text-sm flex-1"
+                  autoComplete="off"
+                />
               </div>
+
+              {/* Suggestions dropdown */}
+              {suggestions.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.place_id}
+                      onClick={() => handleSelectSuggestion(s)}
+                      className="w-full text-left px-4 py-3 hover:bg-grab-light text-sm border-b last:border-0 border-gray-50 transition-colors"
+                    >
+                      <p className="font-medium text-gray-800 truncate">
+                        {s.display_name.split(',')[0]}
+                      </p>
+                      <p className="text-xs text-gray-400 truncate mt-0.5">
+                        {s.display_name.split(',').slice(1, 3).join(',')}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
 
       {/* Bottom panel */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 p-4">
+      <div className="absolute bottom-0 left-0 right-0 z-[1000] p-4">
         <div className="max-w-md mx-auto space-y-3">
 
-          {/* Route info */}
+          {/* Route + price + book button */}
           {routeInfo && !ride && (
             <div className="card-grab">
               <div className="flex justify-between items-center mb-3">
@@ -223,17 +262,9 @@ const UserDashboard: React.FC = () => {
                   <p className="font-bold text-grab-green">${price}</p>
                 </div>
               </div>
-              <p className="text-xs text-gray-400 text-center mb-3">
-                TukTuk ride • $0.50/km
-              </p>
-              {error && (
-                <p className="text-red-500 text-xs mb-2 text-center">{error}</p>
-              )}
-              <button
-                onClick={handleBookRide}
-                disabled={booking}
-                className="btn-grab w-full"
-              >
+              <p className="text-xs text-gray-400 text-center mb-3">TukTuk ride • $0.50/km</p>
+              {error && <p className="text-red-500 text-xs mb-2 text-center">{error}</p>}
+              <button onClick={handleBookRide} disabled={booking} className="btn-grab w-full">
                 {booking ? 'Booking...' : '🛺 Book Ride'}
               </button>
             </div>
@@ -251,7 +282,8 @@ const UserDashboard: React.FC = () => {
                     {STATUS_LABELS[ride.status]?.label}
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {ride.distance.toFixed(1)} km • {ride.duration} • <span className="text-grab-green font-medium">${ride.price.toFixed(2)}</span>
+                    {ride.distance.toFixed(1)} km • {ride.duration} •{' '}
+                    <span className="text-grab-green font-medium">${ride.price.toFixed(2)}</span>
                   </p>
                 </div>
                 {ride.status === 'pending' && (
@@ -268,30 +300,17 @@ const UserDashboard: React.FC = () => {
 
               {(ride.status === 'pending' || ride.status === 'accepted') && (
                 <button
-                  onClick={handleCancelRide}
-                  className="w-full py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                  onClick={handleReset}
+                  className="w-full py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
               )}
-
               {ride.status === 'completed' && (
-                <button
-                  onClick={handleCancelRide}
-                  className="btn-grab w-full"
-                >
+                <button onClick={handleReset} className="btn-grab w-full">
                   Book Another Ride
                 </button>
               )}
-            </div>
-          )}
-
-          {/* Prompt to set destination */}
-          {!destination && !ride && isLoaded && (
-            <div className="card-grab text-center py-2">
-              <p className="text-xs text-gray-500">
-                Search for a destination to get started
-              </p>
             </div>
           )}
         </div>

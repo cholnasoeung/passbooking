@@ -1,11 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useJsApiLoader } from '@react-google-maps/api';
 import Map from '../components/Map';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-
-const LIBRARIES: ('places')[] = ['places'];
 
 interface LatLng { lat: number; lng: number }
 interface RideUser { name: string; email: string }
@@ -23,12 +20,6 @@ interface Ride {
 const DriverDashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    libraries: LIBRARIES
-  });
 
   const [isOnline, setIsOnline] = useState(false);
   const [myLocation, setMyLocation] = useState<LatLng | null>(null);
@@ -152,20 +143,14 @@ const DriverDashboard: React.FC = () => {
     <div className="relative w-full h-screen">
       {/* Full-screen map */}
       <div className="absolute inset-0">
-        {isLoaded ? (
-          <Map
-            pickup={myLocation}
-            destination={activeRide?.pickup ?? null}
-          />
-        ) : (
-          <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-            <div className="text-gray-500">Loading map...</div>
-          </div>
-        )}
+        <Map
+          pickup={myLocation}
+          destination={activeRide?.pickup ?? null}
+        />
       </div>
 
       {/* Top bar */}
-      <div className="absolute top-0 left-0 right-0 z-10 p-4">
+      <div className="absolute top-0 left-0 right-0 z-[1000] p-4">
         <div className="max-w-md mx-auto">
           <div className="card-grab flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -205,7 +190,7 @@ const DriverDashboard: React.FC = () => {
       </div>
 
       {/* Bottom panel */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 p-4 max-h-[60vh] overflow-y-auto">
+      <div className="absolute bottom-0 left-0 right-0 z-[1000] p-4 max-h-[60vh] overflow-y-auto">
         <div className="max-w-md mx-auto space-y-3">
 
           {/* Active ride */}

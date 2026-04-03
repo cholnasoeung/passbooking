@@ -1,147 +1,115 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { GoogleMap, Marker, DirectionsRenderer } from '@react-google-maps/api';
+import React, { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
-interface LatLng {
-  lat: number;
-  lng: number;
-}
-
-interface RouteResult {
-  distanceKm: number;
-  duration: string;
-  distanceText: string;
-}
+interface LatLng { lat: number; lng: number }
 
 interface MapProps {
   pickup: LatLng | null;
-  destination: LatLng | null;
+  destination?: LatLng | null;
+  routeCoords?: [number, number][];
   driverLocation?: LatLng | null;
-  onRouteResult?: (result: RouteResult) => void;
 }
 
-const mapContainerStyle = { width: '100%', height: '100%' };
+// Custom div icons — avoids Leaflet default icon asset issues with Vite
+const makeIcon = (color: string, size = 16) =>
+  L.divIcon({
+    html: `<div style="
+      width:${size}px;height:${size}px;
+      background:${color};
+      border:3px solid white;
+      border-radius:50%;
+      box-shadow:0 2px 6px rgba(0,0,0,0.35);
+    "></div>`,
+    className: '',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
 
-const mapOptions: google.maps.MapOptions = {
-  disableDefaultUI: false,
-  zoomControl: true,
-  streetViewControl: false,
-  mapTypeControl: false,
-  fullscreenControl: false,
-  styles: [
-    { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] }
-  ]
-};
+const DRIVER_ICON = L.divIcon({
+  html: `<div style="
+    width:20px;height:20px;
+    background:#3B82F6;
+    border:3px solid white;
+    border-radius:50%;
+    box-shadow:0 2px 6px rgba(0,0,0,0.35);
+    display:flex;align-items:center;justify-content:center;
+    font-size:10px;
+  ">🛺</div>`,
+  className: '',
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
+});
 
-const TUKTUK_ICON = {
-  path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z',
-  fillColor: '#00B14F',
-  fillOpacity: 1,
-  strokeWeight: 0,
-  scale: 1.5,
-};
-
-const Map: React.FC<MapProps> = ({ pickup, destination, driverLocation, onRouteResult }) => {
-  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
-  const routeCalcRef = useRef<string>('');
-
-  const center: LatLng = pickup || { lat: 11.5564, lng: 104.9282 };
+// Fits map to show both pickup and destination
+const MapController = ({
+  pickup,
+  destination,
+}: {
+  pickup: LatLng | null;
+  destination: LatLng | null | undefined;
+}) => {
+  const map = useMap();
 
   useEffect(() => {
-    if (!pickup || !destination) {
-      setDirections(null);
-      return;
+    if (pickup && destination) {
+      map.fitBounds(
+        [
+          [pickup.lat, pickup.lng],
+          [destination.lat, destination.lng],
+        ],
+        { padding: [60, 60] }
+      );
+    } else if (pickup) {
+      map.setView([pickup.lat, pickup.lng], 14);
     }
+  }, [pickup?.lat, pickup?.lng, destination?.lat, destination?.lng]);
 
-    // Prevent duplicate calculations
-    const key = `${pickup.lat},${pickup.lng}-${destination.lat},${destination.lng}`;
-    if (routeCalcRef.current === key) return;
-    routeCalcRef.current = key;
+  return null;
+};
 
-    const service = new window.google.maps.DirectionsService();
-    service.route(
-      {
-        origin: pickup,
-        destination: destination,
-        travelMode: window.google.maps.TravelMode.DRIVING
-      },
-      (result, status) => {
-        if (status === 'OK' && result) {
-          setDirections(result);
-          const leg = result.routes[0]?.legs[0];
-          if (leg && onRouteResult) {
-            onRouteResult({
-              distanceKm: (leg.distance?.value ?? 0) / 1000,
-              distanceText: leg.distance?.text ?? '',
-              duration: leg.duration?.text ?? ''
-            });
-          }
-        }
-      }
-    );
-  }, [pickup, destination]);
+const DEFAULT_CENTER: [number, number] = [11.5564, 104.9282]; // Phnom Penh
+
+const Map: React.FC<MapProps> = ({ pickup, destination, routeCoords, driverLocation }) => {
+  const center: [number, number] = pickup
+    ? [pickup.lat, pickup.lng]
+    : DEFAULT_CENTER;
 
   return (
-    <GoogleMap
-      mapContainerStyle={mapContainerStyle}
+    <MapContainer
       center={center}
       zoom={14}
-      options={mapOptions}
+      style={{ width: '100%', height: '100%' }}
+      zoomControl
     >
-      {/* Pickup marker (user) */}
-      {pickup && !directions && (
-        <Marker
-          position={pickup}
-          icon={{
-            path: window.google.maps.SymbolPath.CIRCLE,
-            scale: 10,
-            fillColor: '#00B14F',
-            fillOpacity: 1,
-            strokeColor: '#fff',
-            strokeWeight: 3
-          }}
-          title="Your Location"
-        />
+      <TileLayer
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      />
+
+      <MapController pickup={pickup} destination={destination} />
+
+      {/* Pickup — green dot */}
+      {pickup && (
+        <Marker position={[pickup.lat, pickup.lng]} icon={makeIcon('#00B14F', 16)} />
       )}
 
-      {/* Destination marker */}
-      {destination && !directions && (
-        <Marker
-          position={destination}
-          icon={{
-            path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-            scale: 6,
-            fillColor: '#FF3B30',
-            fillOpacity: 1,
-            strokeColor: '#fff',
-            strokeWeight: 2
-          }}
-          title="Destination"
-        />
+      {/* Destination — red dot */}
+      {destination && (
+        <Marker position={[destination.lat, destination.lng]} icon={makeIcon('#FF3B30', 16)} />
       )}
 
-      {/* Route */}
-      {directions && (
-        <DirectionsRenderer
-          directions={directions}
-          options={{
-            polylineOptions: { strokeColor: '#00B14F', strokeWeight: 5 },
-            suppressMarkers: false
-          }}
-        />
-      )}
-
-      {/* Driver location */}
+      {/* Driver — blue tuk-tuk */}
       {driverLocation && (
-        <Marker
-          position={driverLocation}
-          icon={{
-            ...TUKTUK_ICON,
-            anchor: new window.google.maps.Point(12, 24)
-          }}
-          title="Your Driver"
-        />
+        <Marker position={[driverLocation.lat, driverLocation.lng]} icon={DRIVER_ICON} />
       )}
-    </GoogleMap>
+
+      {/* Route polyline */}
+      {routeCoords && routeCoords.length > 0 && (
+        <Polyline positions={routeCoords} color="#00B14F" weight={5} opacity={0.85} />
+      )}
+    </MapContainer>
   );
 };
 
