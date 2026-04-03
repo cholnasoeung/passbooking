@@ -20,6 +20,12 @@ exports.toggleOnline = async (req, res) => {
       return res.status(error.status).json({ message: error.message });
     }
 
+    if (!driver.vehicleId) {
+      return res.status(400).json({
+        message: 'A vehicle must be set before you can go online'
+      });
+    }
+
     driver.isOnline = !driver.isOnline;
     await driver.save();
 

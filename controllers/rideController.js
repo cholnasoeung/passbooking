@@ -1,7 +1,16 @@
+const mongoose = require('mongoose');
 const Ride = require('../models/Ride');
 const Driver = require('../models/Driver');
 const Vehicle = require('../models/Vehicle');
 const { getDriverAccess } = require('../utils/driverAccess');
+
+function ensureValidRideId(id, res) {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400).json({ message: 'Invalid ride id' });
+    return false;
+  }
+  return true;
+}
 
 // Haversine formula: returns distance in km
 function haversineDistance(lat1, lng1, lat2, lng2) {
@@ -102,6 +111,8 @@ exports.createRide = async (req, res) => {
 
 exports.getRide = async (req, res) => {
   try {
+    if (!ensureValidRideId(req.params.id, res)) return;
+
     const ride = await Ride.findById(req.params.id)
       .populate('userId', 'name email')
       .populate({ path: 'driverId', populate: { path: 'userId', select: 'name' } });
@@ -149,6 +160,8 @@ exports.getNearbyDrivers = async (req, res) => {
 
 exports.acceptRide = async (req, res) => {
   try {
+    if (!ensureValidRideId(req.params.id, res)) return;
+
     const { driver, error } = await getDriverAccess(req.user.id);
     if (error) {
       return res.status(error.status).json({ message: error.message });
@@ -178,6 +191,8 @@ exports.acceptRide = async (req, res) => {
 
 exports.updateStatus = async (req, res) => {
   try {
+    if (!ensureValidRideId(req.params.id, res)) return;
+
     const { status } = req.body;
     const validStatuses = ['pending', 'accepted', 'ongoing', 'completed'];
 
@@ -229,6 +244,53 @@ exports.getPendingRidesForDriver = async (req, res) => {
     }).populate('userId', 'name email');
 
     res.json(rides);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.getUserRideHistory = async (req, res) => {
+  try {
+    const rides = await Ride.find({ userId: req.user.id })
+      .populate('driverId', {
+        _id: 1,
+        vehicleId: 1,
+        currentLocation: 1
+      })
+      .populate({
+        path: 'driverId',
+        populate: { path: 'userId', select: 'name email' }
+      })
+      .sort({ createdAt: -1 });
+
+    res.json(rides);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.cancelRide = async (req, res) => {
+  try {
+    if (!ensureValidRideId(req.params.id, res)) return;
+
+    const ride = await Ride.findById(req.params.id);
+    if (!ride) {
+      return res.status(404).json({ message: 'Ride not found' });
+    }
+
+    if (ride.userId.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'You can only cancel your own rides' });
+    }
+
+    if (['completed', 'cancelled'].includes(ride.status)) {
+      return res.status(400).json({ message: 'This ride cannot be cancelled' });
+    }
+
+    ride.status = 'cancelled';
+    ride.driverId = null;
+    await ride.save();
+
+    res.json({ message: 'Ride cancelled successfully', ride });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
