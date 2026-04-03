@@ -14,6 +14,15 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* Hide scrollbars while keeping scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 @layer components {
   .btn-grab {
     @apply bg-grab-green text-white font-semibold py-3 px-6 rounded-xl hover:bg-grab-dark transition-colors duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
