@@ -23,6 +23,7 @@ interface Ride {
   duration: string;
   price: number;
   userId?: RideUser;
+  routePath?: LatLng[];
 }
 
 interface DriverStatusResponse {
@@ -223,7 +224,13 @@ const DriverDashboard = () => {
   return (
     <div className="relative h-screen w-full">
       <div className="absolute inset-0">
-        <Map pickup={myLocation} destination={activeRide?.pickup ?? null} />
+        <Map
+          pickup={myLocation}
+          destination={activeRide?.pickup ?? null}
+          routeCoords={activeRide?.routePath?.length
+            ? activeRide.routePath.map((point) => [point.lat, point.lng] as [number, number])
+            : null}
+        />
       </div>
 
       <div className="absolute left-0 right-0 top-0 z-[1000] p-4">

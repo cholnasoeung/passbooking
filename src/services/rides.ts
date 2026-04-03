@@ -3,6 +3,11 @@ import type { VehicleOption } from './vehicles';
 
 export type RideStatus = 'pending' | 'accepted' | 'ongoing' | 'completed' | 'cancelled';
 
+export interface RoutePoint {
+  lat: number;
+  lng: number;
+}
+
 export interface PassengerRide {
   _id: string;
   distance: number;
@@ -11,6 +16,7 @@ export interface PassengerRide {
   status: RideStatus;
   seats: number;
   vehicleType: VehicleOption['type'];
+  routePath?: RoutePoint[];
   driverId?: {
     _id: string;
     userId?: {
@@ -42,6 +48,7 @@ export interface CreateRidePayload {
   duration: string;
   vehicleType: VehicleOption['type'];
   seats: number;
+  routePath: RoutePoint[];
 }
 
 const ridesService = {

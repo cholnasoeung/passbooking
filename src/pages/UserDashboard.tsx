@@ -276,6 +276,11 @@ const UserDashboard = () => {
       return;
     }
 
+    if (ride.routePath && ride.routePath.length > 0) {
+      setRideRoutePath(ride.routePath.map((point) => [point.lat, point.lng]));
+      return;
+    }
+
     const fetchRideRoute = async () => {
       try {
         const details = await fetchRouteDetails(ride.pickup, ride.destination);
@@ -286,7 +291,7 @@ const UserDashboard = () => {
     };
 
     void fetchRideRoute();
-  }, [ride?._id]);
+  }, [ride?._id, ride?.pickup, ride?.destination, ride?.routePath]);
 
   useEffect(() => {
     const selectedVehicle = vehicles.find((vehicle) => vehicle.type === selectedVehicleType);
@@ -376,6 +381,8 @@ const UserDashboard = () => {
     setFeedback(null);
 
     try {
+      const routePathPayload = routeInfo.path.map(([lat, lng]) => ({ lat, lng }));
+
       const createdRide = await ridesService.createRide({
         pickup: pickupLocation,
         destination: destinationLocation,
@@ -383,6 +390,8 @@ const UserDashboard = () => {
         duration: routeInfo.durationLabel,
         vehicleType: selectedVehicleType,
         seats
+        ,
+        routePath: routePathPayload
       });
 
       setRide(createdRide);
