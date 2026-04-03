@@ -20,6 +20,7 @@ interface MapProps {
   routeCoords?: [number, number][];
   driverLocation?: LatLng | null;
   driverMarkers?: DriverMarker[];
+  focusLocation?: LatLng | null;
 }
 
 const makeIcon = (color: string, size = 16) =>
@@ -61,9 +62,11 @@ const VEHICLE_COLORS: Record<DriverMarker['vehicleType'], string> = {
 const MapController = ({
   pickup,
   destination,
+  focusLocation
 }: {
   pickup: LatLng | null;
   destination: LatLng | null | undefined;
+  focusLocation?: LatLng | null;
 }) => {
   const map = useMap();
 
@@ -76,20 +79,38 @@ const MapController = ({
         ],
         { padding: [60, 60] }
       );
+    } else if (focusLocation) {
+      map.setView([focusLocation.lat, focusLocation.lng], 14);
     } else if (pickup) {
       map.setView([pickup.lat, pickup.lng], 14);
     }
-  }, [pickup?.lat, pickup?.lng, destination?.lat, destination?.lng]);
+  }, [
+    pickup?.lat,
+    pickup?.lng,
+    destination?.lat,
+    destination?.lng,
+    focusLocation?.lat,
+    focusLocation?.lng
+  ]);
 
   return null;
 };
 
 const DEFAULT_CENTER: [number, number] = [11.5564, 104.9282]; // Phnom Penh
 
-const Map: React.FC<MapProps> = ({ pickup, destination, routeCoords, driverLocation, driverMarkers }) => {
-  const center: [number, number] = pickup
-    ? [pickup.lat, pickup.lng]
-    : DEFAULT_CENTER;
+const Map: React.FC<MapProps> = ({
+  pickup,
+  destination,
+  routeCoords,
+  driverLocation,
+  driverMarkers,
+  focusLocation
+}) => {
+  const center: [number, number] = focusLocation
+    ? [focusLocation.lat, focusLocation.lng]
+    : pickup
+      ? [pickup.lat, pickup.lng]
+      : DEFAULT_CENTER;
 
   return (
     <MapContainer
@@ -103,7 +124,7 @@ const Map: React.FC<MapProps> = ({ pickup, destination, routeCoords, driverLocat
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      <MapController pickup={pickup} destination={destination} />
+      <MapController pickup={pickup} destination={destination} focusLocation={focusLocation} />
 
       {pickup && (
         <Marker position={[pickup.lat, pickup.lng]} icon={makeIcon('#00B14F', 16)} />
