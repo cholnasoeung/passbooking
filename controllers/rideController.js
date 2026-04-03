@@ -1,5 +1,6 @@
 const Ride = require('../models/Ride');
 const Driver = require('../models/Driver');
+const { getDriverAccess } = require('../utils/driverAccess');
 
 // Haversine formula: returns distance in km
 function haversineDistance(lat1, lng1, lat2, lng2) {
@@ -31,7 +32,11 @@ exports.createRide = async (req, res) => {
     });
 
     // Auto-assign nearest online driver
-    const onlineDrivers = await Driver.find({ isOnline: true });
+    const onlineDrivers = await Driver.find({
+      isOnline: true,
+      isBlocked: { $ne: true },
+      isApproved: { $ne: false }
+    });
 
     if (onlineDrivers.length > 0) {
       let nearestDriver = null;
@@ -77,7 +82,11 @@ exports.getRide = async (req, res) => {
 exports.getNearbyDrivers = async (req, res) => {
   try {
     const { lat, lng } = req.query;
-    const drivers = await Driver.find({ isOnline: true }).populate('userId', 'name');
+    const drivers = await Driver.find({
+      isOnline: true,
+      isBlocked: { $ne: true },
+      isApproved: { $ne: false }
+    }).populate('userId', 'name');
 
     const result = drivers
       .map((d) => ({
@@ -97,13 +106,18 @@ exports.getNearbyDrivers = async (req, res) => {
 
 exports.acceptRide = async (req, res) => {
   try {
-    const driver = await Driver.findOne({ userId: req.user.id });
-    if (!driver) return res.status(404).json({ message: 'Driver not found' });
+    const { driver, error } = await getDriverAccess(req.user.id);
+    if (error) {
+      return res.status(error.status).json({ message: error.message });
+    }
 
     const ride = await Ride.findById(req.params.id);
     if (!ride) return res.status(404).json({ message: 'Ride not found' });
     if (ride.status !== 'pending') {
       return res.status(400).json({ message: 'Ride is no longer pending' });
+    }
+    if (ride.driverId && ride.driverId.toString() !== driver._id.toString()) {
+      return res.status(403).json({ message: 'Ride is assigned to another driver' });
     }
 
     ride.driverId = driver._id;
@@ -125,13 +139,20 @@ exports.updateStatus = async (req, res) => {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
-    const ride = await Ride.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    );
+    const { driver, error } = await getDriverAccess(req.user.id);
+    if (error) {
+      return res.status(error.status).json({ message: error.message });
+    }
 
+    const ride = await Ride.findById(req.params.id);
     if (!ride) return res.status(404).json({ message: 'Ride not found' });
+
+    if (!ride.driverId || ride.driverId.toString() !== driver._id.toString()) {
+      return res.status(403).json({ message: 'You can only update your assigned rides' });
+    }
+
+    ride.status = status;
+    await ride.save();
     res.json(ride);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -140,8 +161,10 @@ exports.updateStatus = async (req, res) => {
 
 exports.getPendingRidesForDriver = async (req, res) => {
   try {
-    const driver = await Driver.findOne({ userId: req.user.id });
-    if (!driver) return res.status(404).json({ message: 'Driver not found' });
+    const { driver, error } = await getDriverAccess(req.user.id);
+    if (error) {
+      return res.status(error.status).json({ message: error.message });
+    }
 
     const rides = await Ride.find({
       $or: [

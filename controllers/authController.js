@@ -6,6 +6,11 @@ const Driver = require('../models/Driver');
 exports.register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
+    const requestedRole = role || 'user';
+
+    if (!['user', 'driver'].includes(requestedRole)) {
+      return res.status(400).json({ message: 'Invalid registration role' });
+    }
 
     const existing = await User.findOne({ email });
     if (existing) {
@@ -19,13 +24,16 @@ exports.register = async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      role: role || 'user'
+      role: requestedRole
     });
     await user.save();
 
     // Create driver profile automatically for driver role
-    if (role === 'driver') {
-      const driver = new Driver({ userId: user._id });
+    if (requestedRole === 'driver') {
+      const driver = new Driver({
+        userId: user._id,
+        isApproved: false
+      });
       await driver.save();
     }
 

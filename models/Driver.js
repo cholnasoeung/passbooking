@@ -8,6 +8,8 @@ const driverSchema = new mongoose.Schema({
     unique: true
   },
   isOnline: { type: Boolean, default: false },
+  isApproved: { type: Boolean, default: false },
+  isBlocked: { type: Boolean, default: false },
   currentLocation: {
     lat: { type: Number, default: 11.5564 },  // Phnom Penh default
     lng: { type: Number, default: 104.9282 }

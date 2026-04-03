@@ -17,6 +17,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/driver', require('./routes/driver'));
 app.use('/api/rides', require('./routes/rides'));
 
