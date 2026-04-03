@@ -1,16 +1,25 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import AdminDashboard from './pages/AdminDashboard';
 import Login from './pages/Login';
 import UserDashboard from './pages/UserDashboard';
 import DriverDashboard from './pages/DriverDashboard';
+
+type AppRole = 'user' | 'driver' | 'admin';
+
+const getDashboardRoute = (role: AppRole) => {
+  if (role === 'admin') return '/admin';
+  if (role === 'driver') return '/driver';
+  return '/user';
+};
 
 const PrivateRoute = ({
   children,
   allowedRole
 }: {
   children: React.ReactNode;
-  allowedRole: 'user' | 'driver';
+  allowedRole: AppRole;
 }) => {
   const { user, loading } = useAuth();
 
@@ -27,7 +36,7 @@ const PrivateRoute = ({
 
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== allowedRole) {
-    return <Navigate to={user.role === 'driver' ? '/driver' : '/user'} replace />;
+    return <Navigate to={getDashboardRoute(user.role)} replace />;
   }
   return <>{children}</>;
 };
@@ -42,7 +51,7 @@ const AppRoutes = () => {
         path="/login"
         element={
           user
-            ? <Navigate to={user.role === 'driver' ? '/driver' : '/user'} replace />
+            ? <Navigate to={getDashboardRoute(user.role)} replace />
             : <Login />
         }
       />
@@ -63,10 +72,18 @@ const AppRoutes = () => {
         }
       />
       <Route
+        path="/admin"
+        element={
+          <PrivateRoute allowedRole="admin">
+            <AdminDashboard />
+          </PrivateRoute>
+        }
+      />
+      <Route
         path="*"
         element={
           user
-            ? <Navigate to={user.role === 'driver' ? '/driver' : '/user'} replace />
+            ? <Navigate to={getDashboardRoute(user.role)} replace />
             : <Navigate to="/login" replace />
         }
       />

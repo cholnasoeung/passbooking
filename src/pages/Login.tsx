@@ -29,8 +29,8 @@ const Login: React.FC = () => {
       // Redirect based on role stored after auth
       const stored = localStorage.getItem('user');
       if (stored) {
-        const u = JSON.parse(stored);
-        navigate(u.role === 'driver' ? '/driver' : '/user');
+        const u = JSON.parse(stored) as { role: 'user' | 'driver' | 'admin' };
+        navigate(u.role === 'admin' ? '/admin' : u.role === 'driver' ? '/driver' : '/user');
       }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })

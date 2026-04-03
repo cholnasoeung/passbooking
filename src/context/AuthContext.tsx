@@ -5,7 +5,7 @@ interface AuthUser {
   id: string;
   name: string;
   email: string;
-  role: 'user' | 'driver';
+  role: 'user' | 'driver' | 'admin';
 }
 
 interface AuthContextType {
