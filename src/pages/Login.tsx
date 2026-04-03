@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import vehiclesService from '../services/vehicles';
+import type { VehicleOption } from '../services/vehicles';
 
 const Login: React.FC = () => {
   const { login, register } = useAuth();
@@ -13,6 +15,22 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [availableVehicles, setAvailableVehicles] = useState<VehicleOption[]>([]);
+  const [selectedVehicleId, setSelectedVehicleId] = useState('');
+  const [vehicleError, setVehicleError] = useState('');
+
+  useEffect(() => {
+    void vehiclesService.getVehicles()
+      .then((vehicles) => setAvailableVehicles(vehicles))
+      .catch(() => setVehicleError('Unable to load vehicles'));
+  }, []);
+
+  useEffect(() => {
+    if (role === 'user') {
+      setSelectedVehicleId('');
+      setVehicleError('');
+    }
+  }, [role]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +39,11 @@ const Login: React.FC = () => {
 
     try {
       if (isRegister) {
-        await register(name, email, password, role);
+        if (role === 'driver' && !selectedVehicleId) {
+          setVehicleError('Please choose a vehicle');
+          return;
+        }
+        await register(name, email, password, role, role === 'driver' ? selectedVehicleId : undefined);
       } else {
         await login(email, password);
       }
@@ -38,6 +60,7 @@ const Login: React.FC = () => {
       setError(msg);
     } finally {
       setLoading(false);
+      setVehicleError('');
     }
   };
 
@@ -107,8 +130,8 @@ const Login: React.FC = () => {
           {isRegister && (
             <div className="flex gap-3">
               <button
-                type="button"
-                onClick={() => setRole('user')}
+              type="button"
+              onClick={() => setRole('user')}
                 className={`flex-1 py-3 rounded-xl border-2 text-sm font-medium transition-all ${
                   role === 'user'
                     ? 'border-grab-green bg-grab-light text-grab-green'
@@ -128,6 +151,29 @@ const Login: React.FC = () => {
               >
                 🛺 Driver
               </button>
+            </div>
+          )}
+
+          {isRegister && role === 'driver' && (
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Vehicle type</p>
+              <select
+                value={selectedVehicleId}
+                onChange={(event) => setSelectedVehicleId(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              >
+                <option value="" disabled>
+                  Select your vehicle
+                </option>
+                {availableVehicles.map((vehicle) => (
+                  <option key={vehicle._id} value={vehicle._id}>
+                    {vehicle.type.charAt(0).toUpperCase() + vehicle.type.slice(1)} • ${vehicle.basePrice.toFixed(2)} + ${vehicle.pricePerKm.toFixed(2)}/km • {vehicle.maxSeats} seats
+                  </option>
+                ))}
+              </select>
+              {vehicleError && (
+                <p className="text-xs text-rose-600">{vehicleError}</p>
+              )}
             </div>
           )}
 

@@ -63,6 +63,25 @@ export interface AdminRide {
   updatedAt: string;
 }
 
+export interface AdminVehicle {
+  _id: string;
+  type: 'tuktuk' | 'moto' | 'car' | 'taxi';
+  basePrice: number;
+  pricePerKm: number;
+  maxSeats: number;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VehiclePayload {
+  type: AdminVehicle['type'];
+  basePrice: number;
+  pricePerKm: number;
+  maxSeats: number;
+  enabled?: boolean;
+}
+
 export interface AdminDashboardStats {
   totalUsers: number;
   totalDrivers: number;
@@ -105,6 +124,26 @@ const adminService = {
   async blockDriver(driverId: string) {
     const response = await api.put<{ driver: AdminDriver }>(`/admin/drivers/${driverId}/block`);
     return response.data.driver;
+  },
+
+  async enableDriver(driverId: string) {
+    const response = await api.put<{ driver: AdminDriver }>(`/admin/drivers/${driverId}/enable`);
+    return response.data.driver;
+  },
+
+  async getVehicles() {
+    const response = await api.get<AdminVehicle[]>('/admin/vehicles');
+    return response.data;
+  },
+
+  async createVehicle(payload: VehiclePayload) {
+    const response = await api.post('/admin/vehicles', payload);
+    return response.data.vehicle as AdminVehicle;
+  },
+
+  async updateVehicle(vehicleId: string, payload: Partial<VehiclePayload>) {
+    const response = await api.put(`/admin/vehicles/${vehicleId}`, payload);
+    return response.data.vehicle as AdminVehicle;
   },
 
   async getRides() {

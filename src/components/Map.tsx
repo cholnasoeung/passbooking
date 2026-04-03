@@ -3,16 +3,25 @@ import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-interface LatLng { lat: number; lng: number }
+interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+interface DriverMarker {
+  id: string;
+  location: LatLng;
+  vehicleType: 'tuktuk' | 'moto' | 'car' | 'taxi';
+}
 
 interface MapProps {
   pickup: LatLng | null;
   destination?: LatLng | null;
   routeCoords?: [number, number][];
   driverLocation?: LatLng | null;
+  driverMarkers?: DriverMarker[];
 }
 
-// Custom div icons — avoids Leaflet default icon asset issues with Vite
 const makeIcon = (color: string, size = 16) =>
   L.divIcon({
     html: `<div style="
@@ -36,13 +45,19 @@ const DRIVER_ICON = L.divIcon({
     box-shadow:0 2px 6px rgba(0,0,0,0.35);
     display:flex;align-items:center;justify-content:center;
     font-size:10px;
-  ">🛺</div>`,
+  ">ðŸ›º</div>`,
   className: '',
   iconSize: [20, 20],
   iconAnchor: [10, 10],
 });
 
-// Fits map to show both pickup and destination
+const VEHICLE_COLORS: Record<DriverMarker['vehicleType'], string> = {
+  tuktuk: '#22C55E',
+  moto: '#F97316',
+  car: '#6366F1',
+  taxi: '#EF4444'
+};
+
 const MapController = ({
   pickup,
   destination,
@@ -71,7 +86,7 @@ const MapController = ({
 
 const DEFAULT_CENTER: [number, number] = [11.5564, 104.9282]; // Phnom Penh
 
-const Map: React.FC<MapProps> = ({ pickup, destination, routeCoords, driverLocation }) => {
+const Map: React.FC<MapProps> = ({ pickup, destination, routeCoords, driverLocation, driverMarkers }) => {
   const center: [number, number] = pickup
     ? [pickup.lat, pickup.lng]
     : DEFAULT_CENTER;
@@ -90,22 +105,25 @@ const Map: React.FC<MapProps> = ({ pickup, destination, routeCoords, driverLocat
 
       <MapController pickup={pickup} destination={destination} />
 
-      {/* Pickup — green dot */}
       {pickup && (
         <Marker position={[pickup.lat, pickup.lng]} icon={makeIcon('#00B14F', 16)} />
       )}
-
-      {/* Destination — red dot */}
       {destination && (
         <Marker position={[destination.lat, destination.lng]} icon={makeIcon('#FF3B30', 16)} />
       )}
 
-      {/* Driver — blue tuk-tuk */}
+      {driverMarkers?.map((driver) => (
+        <Marker
+          key={driver.id}
+          position={[driver.location.lat, driver.location.lng]}
+          icon={makeIcon(VEHICLE_COLORS[driver.vehicleType], 16)}
+        />
+      ))}
+
       {driverLocation && (
         <Marker position={[driverLocation.lat, driverLocation.lng]} icon={DRIVER_ICON} />
       )}
 
-      {/* Route polyline */}
       {routeCoords && routeCoords.length > 0 && (
         <Polyline positions={routeCoords} color="#00B14F" weight={5} opacity={0.85} />
       )}

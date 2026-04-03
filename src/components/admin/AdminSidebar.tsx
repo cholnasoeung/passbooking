@@ -1,4 +1,4 @@
-export type AdminSection = 'overview' | 'users' | 'drivers' | 'rides';
+export type AdminSection = 'overview' | 'users' | 'drivers' | 'rides' | 'vehicles';
 
 interface AdminSidebarProps {
   activeSection: AdminSection;
@@ -15,7 +15,8 @@ const navItems: Array<{
   { id: 'overview', label: 'Overview', caption: 'KPIs & platform health' },
   { id: 'users', label: 'Users', caption: 'Accounts & permissions' },
   { id: 'drivers', label: 'Drivers', caption: 'Approvals & blocking' },
-  { id: 'rides', label: 'Rides', caption: 'Trip records & cleanup' }
+  { id: 'rides', label: 'Rides', caption: 'Trip records & cleanup' },
+  { id: 'vehicles', label: 'Vehicles', caption: 'Fares & seat setup' }
 ];
 
 const AdminSidebar = ({

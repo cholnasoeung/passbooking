@@ -5,6 +5,7 @@ interface DriversTableProps {
   pendingAction: string | null;
   onApprove: (driverId: string) => void;
   onBlock: (driverId: string) => void;
+  onEnable: (driverId: string) => void;
 }
 
 const dateFormatter = new Intl.DateTimeFormat('en-US', {
@@ -22,7 +23,8 @@ const DriversTable = ({
   drivers,
   pendingAction,
   onApprove,
-  onBlock
+  onBlock,
+  onEnable
 }: DriversTableProps) => {
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -45,16 +47,17 @@ const DriversTable = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {drivers.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-6 py-10 text-center text-sm text-slate-500">
-                  No drivers found.
-                </td>
-              </tr>
-            ) : (
-              drivers.map((driver) => {
-                const isApproving = pendingAction === `approve-driver:${driver._id}`;
-                const isBlocking = pendingAction === `block-driver:${driver._id}`;
+                {drivers.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-10 text-center text-sm text-slate-500">
+                      No drivers found.
+                    </td>
+                  </tr>
+                ) : (
+                  drivers.map((driver) => {
+                    const isApproving = pendingAction === `approve-driver:${driver._id}`;
+                    const isBlocking = pendingAction === `block-driver:${driver._id}`;
+                    const isEnabling = pendingAction === `enable-driver:${driver._id}`;
 
                 return (
                   <tr key={driver._id} className="align-top">
@@ -91,6 +94,14 @@ const DriversTable = ({
                           className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {isApproving ? 'Approving...' : 'Approve'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onEnable(driver._id)}
+                          disabled={isEnabling || driver.status !== 'blocked'}
+                          className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isEnabling ? 'Enabling...' : 'Enable'}
                         </button>
                         <button
                           type="button"

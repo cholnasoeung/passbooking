@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Map from '../components/Map';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import vehiclesService from '../services/vehicles';
+import type { VehicleOption } from '../services/vehicles';
 import { useNavigate } from 'react-router-dom';
 
 interface LatLng { lat: number; lng: number }
@@ -28,6 +30,18 @@ interface Ride {
   driverId?: { currentLocation: LatLng; userId?: { name: string } } | null;
 }
 
+interface DriverMarker {
+  id: string;
+  location: LatLng;
+  vehicleType: VehicleOption['type'];
+}
+
+const calculatePriceForVehicle = (vehicle: VehicleOption, distance: number, seats: number) => {
+  const roundedSeats = Math.max(1, Math.floor(seats));
+  const price = vehicle.basePrice + distance * vehicle.pricePerKm * roundedSeats;
+  return parseFloat(price.toFixed(2));
+};
+
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   pending:   { label: 'Searching for driver...', color: 'text-yellow-600' },
   accepted:  { label: 'Driver accepted! On the way', color: 'text-blue-600' },
@@ -48,9 +62,44 @@ const UserDashboard: React.FC = () => {
   const [ride, setRide] = useState<Ride | null>(null);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState('');
+  const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
+  const [selectedVehicleType, setSelectedVehicleType] = useState<VehicleOption['type'] | null>(null);
+  const [seats, setSeats] = useState(1);
+  const [seatError, setSeatError] = useState('');
+  const [driverMarkers, setDriverMarkers] = useState<DriverMarker[]>([]);
+  const [nearbyError, setNearbyError] = useState('');
 
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    void vehiclesService.getVehicles()
+      .then((items) => setVehicles(items))
+      .catch(() => setError('Unable to load vehicle options'));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedVehicleType && vehicles.length > 0) {
+      setSelectedVehicleType(vehicles[0].type);
+    }
+  }, [vehicles, selectedVehicleType]);
+
+  const selectedVehicle = useMemo(
+    () => vehicles.find((v) => v.type === selectedVehicleType) ?? null,
+    [vehicles, selectedVehicleType]
+  );
+
+  const estimatedPrice = useMemo(() => {
+    if (!selectedVehicle || !routeInfo) return null;
+    return calculatePriceForVehicle(selectedVehicle, routeInfo.distanceKm, seats);
+  }, [selectedVehicle, routeInfo, seats]);
+
+  useEffect(() => {
+    const vehicle = vehicles.find((item) => item.type === selectedVehicleType);
+    if (vehicle && seats > vehicle.maxSeats) {
+      setSeats(vehicle.maxSeats);
+    }
+  }, [vehicles, selectedVehicleType, seats]);
 
   // Get browser GPS location
   useEffect(() => {
@@ -59,6 +108,40 @@ const UserDashboard: React.FC = () => {
       () => setPickup({ lat: 11.5564, lng: 104.9282 }) // fallback Phnom Penh
     );
   }, []);
+
+  useEffect(() => {
+    if (!pickup) {
+      setDriverMarkers([]);
+      return;
+    }
+
+    const fetchNearby = async () => {
+      try {
+        const params: Record<string, string | number> = {
+          lat: pickup.lat,
+          lng: pickup.lng
+        };
+        if (selectedVehicleType) {
+          params.vehicleType = selectedVehicleType;
+        }
+        const res = await api.get('/rides/nearby', { params });
+        const markers = res.data.map((driver: any) => ({
+          id: driver._id,
+          location: {
+            lat: driver.currentLocation?.lat ?? 0,
+            lng: driver.currentLocation?.lng ?? 0
+          },
+          vehicleType: driver.vehicleId?.type || 'tuktuk'
+        }));
+        setDriverMarkers(markers);
+        setNearbyError('');
+      } catch {
+        setNearbyError('Unable to load nearby drivers');
+      }
+    };
+
+    void fetchNearby();
+  }, [pickup, selectedVehicleType]);
 
   // Poll ride status while active
   useEffect(() => {
@@ -131,16 +214,37 @@ const UserDashboard: React.FC = () => {
     if (pickup) fetchRoute(pickup, dest);
   };
 
+  const handleSeatChange = (next: number) => {
+    if (!selectedVehicle) return;
+    const clamped = Math.min(Math.max(next, 1), selectedVehicle.maxSeats);
+    setSeats(clamped);
+    if (clamped > selectedVehicle.maxSeats) {
+      setSeatError(`Maximum ${selectedVehicle.maxSeats} seats per ${selectedVehicle.type}`);
+    } else {
+      setSeatError('');
+    }
+  };
+
   const handleBookRide = async () => {
     if (!pickup || !destination || !routeInfo) return;
     setBooking(true);
     setError('');
     try {
+      if (!selectedVehicle) {
+        setError('Please select a vehicle type');
+        return;
+      }
+      if (seats > selectedVehicle.maxSeats) {
+        setSeatError(`Maximum ${selectedVehicle.maxSeats} seats allowed`);
+        return;
+      }
       const res = await api.post('/rides', {
         pickup,
         destination,
         distance: routeInfo.distanceKm,
         duration: routeInfo.duration,
+        seats,
+        vehicleType: selectedVehicle.type
       });
       setRide(res.data);
     } catch (err: unknown) {
@@ -162,18 +266,17 @@ const UserDashboard: React.FC = () => {
     setRouteCoords([]);
   };
 
-  const price = routeInfo ? (routeInfo.distanceKm * 0.5).toFixed(2) : null;
-
   return (
     <div className="relative w-full h-screen">
       {/* Full-screen map */}
       <div className="absolute inset-0">
-        <Map
-          pickup={pickup}
-          destination={destination}
-          routeCoords={routeCoords}
-          driverLocation={ride?.driverId?.currentLocation ?? null}
-        />
+      <Map
+        pickup={pickup}
+        destination={destination}
+        routeCoords={routeCoords}
+        driverLocation={ride?.driverId?.currentLocation ?? null}
+        driverMarkers={driverMarkers}
+      />
       </div>
 
       {/* Top bar */}
@@ -245,8 +348,8 @@ const UserDashboard: React.FC = () => {
 
           {/* Route + price + book button */}
           {routeInfo && !ride && (
-            <div className="card-grab">
-              <div className="flex justify-between items-center mb-3">
+            <div className="card-grab space-y-4">
+              <div className="flex justify-between items-center">
                 <div className="text-center flex-1">
                   <p className="text-xs text-gray-500">Distance</p>
                   <p className="font-bold text-gray-800">{routeInfo.distanceText}</p>
@@ -259,11 +362,52 @@ const UserDashboard: React.FC = () => {
                 <div className="w-px h-10 bg-gray-200" />
                 <div className="text-center flex-1">
                   <p className="text-xs text-gray-500">Price</p>
-                  <p className="font-bold text-grab-green">${price}</p>
+                  <p className="font-bold text-grab-green">
+                    {estimatedPrice !== null ? `$${estimatedPrice.toFixed(2)}` : '—'}
+                  </p>
                 </div>
               </div>
-              <p className="text-xs text-gray-400 text-center mb-3">TukTuk ride • $0.50/km</p>
-              {error && <p className="text-red-500 text-xs mb-2 text-center">{error}</p>}
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-500">Vehicle</p>
+                    <p className="font-semibold text-sm text-slate-800">
+                      {selectedVehicle ? selectedVehicle.type : 'Select vehicle'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleSeatChange(seats - 1)}
+                      disabled={seats <= 1}
+                      className="h-10 w-10 rounded-full border border-slate-200 text-lg font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      -
+                    </button>
+                    <span className="text-lg font-semibold text-gray-800">{seats}</span>
+                    <button
+                      onClick={() => handleSeatChange(seats + 1)}
+                      disabled={!selectedVehicle || seats >= (selectedVehicle?.maxSeats ?? 1)}
+                      className="h-10 w-10 rounded-full border border-slate-200 text-lg font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Seats selected • {selectedVehicle ? `${selectedVehicle.maxSeats} available` : 'Choose a vehicle'}
+                </p>
+                {seatError && <p className="text-xs text-rose-600">{seatError}</p>}
+              </div>
+
+              <p className="text-sm text-gray-500">
+                {selectedVehicle
+                  ? `${selectedVehicle.type.charAt(0).toUpperCase() + selectedVehicle.type.slice(1)} • $${selectedVehicle.pricePerKm.toFixed(2)}/km + $${selectedVehicle.basePrice.toFixed(2)} base`
+                  : 'Select a vehicle to preview pricing'}
+              </p>
+
+              {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+
               <button onClick={handleBookRide} disabled={booking} className="btn-grab w-full">
                 {booking ? 'Booking...' : '🛺 Book Ride'}
               </button>
@@ -310,6 +454,50 @@ const UserDashboard: React.FC = () => {
                 <button onClick={handleReset} className="btn-grab w-full">
                   Book Another Ride
                 </button>
+              )}
+            </div>
+          )}
+          {!ride && vehicles.length > 0 && (
+            <div className="card-grab mt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Vehicle options</p>
+                  <p className="text-sm text-slate-400">Pick a vehicle type for your ride</p>
+                </div>
+                <span className="text-xs font-semibold text-slate-500">
+                  Filtered to {selectedVehicleType ? selectedVehicleType : 'all'}
+                </span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {vehicles.map((vehicle) => {
+                  const isActive = vehicle.type === selectedVehicleType;
+
+                  return (
+                    <button
+                      key={vehicle._id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedVehicleType(vehicle.type);
+                        setSeatError('');
+                      }}
+                      className={`rounded-2xl border px-4 py-4 text-left transition ${
+                        isActive
+                          ? 'border-emerald-400 bg-emerald-50 shadow-lg shadow-emerald-200'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-slate-800">
+                        {vehicle.type.charAt(0).toUpperCase() + vehicle.type.slice(1)}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Base ${vehicle.basePrice.toFixed(2)} + ${vehicle.pricePerKm.toFixed(2)}/km • {vehicle.maxSeats} seats
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+              {nearbyError && (
+                <p className="text-xs text-rose-600">{nearbyError}</p>
               )}
             </div>
           )}
