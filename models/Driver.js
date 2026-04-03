@@ -7,6 +7,11 @@ const driverSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  vehicleId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vehicle',
+    required: true
+  },
   isOnline: { type: Boolean, default: false },
   isApproved: { type: Boolean, default: false },
   isBlocked: { type: Boolean, default: false },

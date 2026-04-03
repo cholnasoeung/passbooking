@@ -1,5 +1,6 @@
 const Ride = require('../models/Ride');
 const Driver = require('../models/Driver');
+const Vehicle = require('../models/Vehicle');
 const { getDriverAccess } = require('../utils/driverAccess');
 
 // Haversine formula: returns distance in km
@@ -18,8 +19,36 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
 
 exports.createRide = async (req, res) => {
   try {
-    const { pickup, destination, distance, duration } = req.body;
-    const price = parseFloat((distance * 0.5).toFixed(2));
+    const {
+      pickup,
+      destination,
+      distance,
+      duration,
+      vehicleType,
+      seats = 1
+    } = req.body;
+
+    if (!vehicleType) {
+      return res.status(400).json({ message: 'Vehicle type is required' });
+    }
+
+    if (distance == null) {
+      return res.status(400).json({ message: 'Distance is required' });
+    }
+
+    const vehicle = await Vehicle.findOne({ type: vehicleType, enabled: true });
+    if (!vehicle) {
+      return res.status(400).json({ message: 'Selected vehicle type is unavailable' });
+    }
+
+    const requestedSeats = Math.max(1, Math.floor(seats));
+    if (requestedSeats > vehicle.maxSeats) {
+      return res.status(400).json({ message: `You can only book up to ${vehicle.maxSeats} seats for ${vehicle.type}` });
+    }
+
+    const price = parseFloat(
+      (vehicle.basePrice + (distance * vehicle.pricePerKm * requestedSeats)).toFixed(2)
+    );
 
     const ride = new Ride({
       userId: req.user.id,
@@ -28,14 +57,16 @@ exports.createRide = async (req, res) => {
       distance,
       duration,
       price,
+      seats: requestedSeats,
+      vehicleType,
       status: 'pending'
     });
 
-    // Auto-assign nearest online driver
     const onlineDrivers = await Driver.find({
       isOnline: true,
       isBlocked: { $ne: true },
-      isApproved: { $ne: false }
+      isApproved: true,
+      vehicleId: vehicle._id
     });
 
     if (onlineDrivers.length > 0) {
@@ -59,7 +90,10 @@ exports.createRide = async (req, res) => {
     }
 
     await ride.save();
-    const populated = await ride.populate('driverId');
+    const populated = await ride.populate({
+      path: 'driverId',
+      populate: { path: 'userId', select: 'name email' }
+    });
     res.status(201).json(populated);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -81,12 +115,21 @@ exports.getRide = async (req, res) => {
 
 exports.getNearbyDrivers = async (req, res) => {
   try {
-    const { lat, lng } = req.query;
-    const drivers = await Driver.find({
+    const { lat, lng, vehicleType } = req.query;
+    const query = {
       isOnline: true,
       isBlocked: { $ne: true },
       isApproved: { $ne: false }
-    }).populate('userId', 'name');
+    };
+
+    if (vehicleType) {
+      const vehicle = await Vehicle.findOne({ type: vehicleType, enabled: true });
+      if (vehicle) {
+        query.vehicleId = vehicle._id;
+      }
+    }
+
+    const drivers = await Driver.find(query).populate('userId', 'name');
 
     const result = drivers
       .map((d) => ({
@@ -118,6 +161,9 @@ exports.acceptRide = async (req, res) => {
     }
     if (ride.driverId && ride.driverId.toString() !== driver._id.toString()) {
       return res.status(403).json({ message: 'Ride is assigned to another driver' });
+    }
+    if (ride.vehicleType && driver.vehicleId && ride.vehicleType !== driver.vehicleId.type) {
+      return res.status(403).json({ message: 'This ride requires a different vehicle type' });
     }
 
     ride.driverId = driver._id;
@@ -166,9 +212,17 @@ exports.getPendingRidesForDriver = async (req, res) => {
       return res.status(error.status).json({ message: error.message });
     }
 
+    const pendingFilter = {
+      status: 'pending',
+      driverId: null
+    };
+    if (driver.vehicleId?.type) {
+      pendingFilter.vehicleType = driver.vehicleId.type;
+    }
+
     const rides = await Ride.find({
       $or: [
-        { status: 'pending', driverId: null },
+        pendingFilter,
         { status: 'pending', driverId: driver._id },
         { status: { $in: ['accepted', 'ongoing'] }, driverId: driver._id }
       ]

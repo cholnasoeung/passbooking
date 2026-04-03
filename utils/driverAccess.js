@@ -12,7 +12,7 @@ exports.getDriverAccess = async (userId) => {
     };
   }
 
-  const driver = await Driver.findOne({ userId });
+  const driver = await Driver.findOne({ userId }).populate('vehicleId');
   if (!driver) {
     return {
       error: {

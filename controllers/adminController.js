@@ -1,6 +1,7 @@
 const Driver = require('../models/Driver');
 const Ride = require('../models/Ride');
 const User = require('../models/User');
+const Vehicle = require('../models/Vehicle');
 
 exports.getAllUsers = async (_req, res) => {
   try {
@@ -44,7 +45,7 @@ exports.deleteUser = async (req, res) => {
 
 exports.updateUserRole = async (req, res) => {
   try {
-    const { role } = req.body;
+    const { role, vehicleId } = req.body;
     const validRoles = ['user', 'driver', 'admin'];
 
     if (!validRoles.includes(role)) {
@@ -64,12 +65,17 @@ exports.updateUserRole = async (req, res) => {
     await user.save();
 
     if (role === 'driver') {
+      const vehicle = await Vehicle.findById(vehicleId);
+      if (!vehicle) {
+        return res.status(400).json({ message: 'Valid vehicle is required for drivers' });
+      }
       await Driver.findOneAndUpdate(
         { userId: user._id },
         {
           isOnline: false,
           isApproved: false,
-          isBlocked: false
+          isBlocked: false,
+          vehicleId: vehicle._id
         },
         {
           new: true,
@@ -100,6 +106,7 @@ exports.getAllDrivers = async (_req, res) => {
   try {
     const drivers = await Driver.find()
       .populate('userId', 'name email role createdAt')
+      .populate('vehicleId')
       .sort({ createdAt: -1 });
 
     const activeDrivers = drivers
@@ -145,7 +152,8 @@ exports.blockDriver = async (req, res) => {
       req.params.id,
       {
         isBlocked: true,
-        isOnline: false
+        isOnline: false,
+        isApproved: false
       },
       { new: true }
     ).populate('userId', 'name email role');
@@ -201,6 +209,87 @@ exports.deleteRide = async (req, res) => {
     }
 
     res.json({ message: 'Ride deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.getVehicles = async (_req, res) => {
+  try {
+    const vehicles = await Vehicle.find().sort({ type: 1 });
+    res.json(vehicles);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.createVehicle = async (req, res) => {
+  try {
+    const { type, basePrice, pricePerKm, maxSeats, enabled = true } = req.body;
+    if (!type || basePrice == null || pricePerKm == null || maxSeats == null) {
+      return res.status(400).json({ message: 'All vehicle fields are required' });
+    }
+
+    const existing = await Vehicle.findOne({ type });
+    if (existing) {
+      return res.status(400).json({ message: 'Vehicle type already exists' });
+    }
+
+    const vehicle = new Vehicle({
+      type,
+      basePrice,
+      pricePerKm,
+      maxSeats,
+      enabled
+    });
+    await vehicle.save();
+
+    res.status(201).json({ message: 'Vehicle created', vehicle });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.updateVehicle = async (req, res) => {
+  try {
+    const { type, basePrice, pricePerKm, maxSeats, enabled } = req.body;
+    const vehicle = await Vehicle.findById(req.params.id);
+    if (!vehicle) {
+      return res.status(404).json({ message: 'Vehicle not found' });
+    }
+
+    if (type) vehicle.type = type;
+    if (basePrice != null) vehicle.basePrice = basePrice;
+    if (pricePerKm != null) vehicle.pricePerKm = pricePerKm;
+    if (maxSeats != null) vehicle.maxSeats = maxSeats;
+    if (enabled != null) vehicle.enabled = enabled;
+
+    await vehicle.save();
+    res.json({ message: 'Vehicle updated', vehicle });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.enableDriver = async (req, res) => {
+  try {
+    const driver = await Driver.findByIdAndUpdate(
+      req.params.id,
+      {
+        isBlocked: false,
+        isApproved: true
+      },
+      { new: true }
+    ).populate('userId', 'name email role').populate('vehicleId');
+
+    if (!driver) {
+      return res.status(404).json({ message: 'Driver not found' });
+    }
+
+    res.json({
+      message: 'Driver enabled successfully',
+      driver
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

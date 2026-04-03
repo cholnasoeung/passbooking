@@ -2,10 +2,11 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Driver = require('../models/Driver');
+const Vehicle = require('../models/Vehicle');
 
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, vehicleId } = req.body;
     const requestedRole = role || 'user';
 
     if (!['user', 'driver'].includes(requestedRole)) {
@@ -30,8 +31,18 @@ exports.register = async (req, res) => {
 
     // Create driver profile automatically for driver role
     if (requestedRole === 'driver') {
+      if (!vehicleId) {
+        return res.status(400).json({ message: 'Vehicle type is required for drivers' });
+      }
+
+      const vehicle = await Vehicle.findById(vehicleId);
+      if (!vehicle || vehicle.enabled === false) {
+        return res.status(400).json({ message: 'Selected vehicle is not available' });
+      }
+
       const driver = new Driver({
         userId: user._id,
+        vehicleId: vehicle._id,
         isApproved: false
       });
       await driver.save();

@@ -8,9 +8,13 @@ const {
   getAllDrivers,
   approveDriver,
   blockDriver,
+  enableDriver,
   getAllRides,
   deleteRide,
-  getDashboardStats
+  getDashboardStats,
+  getVehicles,
+  createVehicle,
+  updateVehicle
 } = require('../controllers/adminController');
 
 const router = express.Router();
@@ -24,9 +28,14 @@ router.put('/users/:id/role', updateUserRole);
 router.get('/drivers', getAllDrivers);
 router.put('/drivers/:id/approve', approveDriver);
 router.put('/drivers/:id/block', blockDriver);
+router.put('/drivers/:id/enable', enableDriver);
 
 router.get('/rides', getAllRides);
 router.delete('/rides/:id', deleteRide);
+
+router.get('/vehicles', getVehicles);
+router.post('/vehicles', createVehicle);
+router.put('/vehicles/:id', updateVehicle);
 
 router.get('/stats', getDashboardStats);
 
